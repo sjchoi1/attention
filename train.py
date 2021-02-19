@@ -29,6 +29,7 @@ def cal_performance(pred, gold, smoothing=False):
     pred = pred.contiguous().view(-1, 16)
     loss = cal_loss(pred, gold, smoothing=smoothing)
     pred = pred.max(1)[1]
+    # gold = gold.max(1)[1]
 
     n_char = pred.shape[0]
     n_word = n_char / 7
@@ -41,9 +42,9 @@ def cal_loss(pred, gold, smoothing=False):
 
     loss = F.cross_entropy(pred, gold, reduction='sum')
 
-    # pred = pred.contiguous().view(-1, 16)
-    # gold = gold.contiguous().view(-1, 16)
-    # loss = F.binary_cross_entropy_with_logits(pred, gold, reduction='sum')
+    # pred = pred.contiguous().view(-1, 112)
+    # gold = gold.contiguous().view(-1, 112)
+    # loss = F.binary_cross_entropy_with_logits(pred, gold, reduction='mean')
     # print(loss)
     return loss
 
@@ -303,8 +304,8 @@ def main():
     print(opt)
 
     transformer = Transformer(
-        n_src_vocab=112,
-        n_trg_vocab=112,
+        n_src_vocab=48,
+        n_trg_vocab=48,
         # d_model=opt.d_model,
         d_inner=opt.d_inner_hid,
         n_layers=opt.n_layers,

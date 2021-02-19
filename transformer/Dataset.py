@@ -47,13 +47,13 @@ class CustomDataset(Dataset):
             return hex2vec(pc[-3:])
 
         def preprocess_addr(addr):
-            return hex2vec(addr[2:-3])
+            return hex2vec(addr[-6:-3])
 
         def preprocess_csv_file(f):
             global tid_to_idx
             global pc_to_idx
-            raw = pd.read_csv(f, header=None)
-            # raw = pd.read_csv(f, header=None, nrows=10000)
+            # raw = pd.read_csv(f, header=None)
+            raw = pd.read_csv(f, header=None, nrows=100000)
             # unique_pc = []
             # for index, row in raw.iterrows():
             #     if row[1] not in unique_pc:
