@@ -23,42 +23,44 @@ from transformer.Dataset import CustomDataset
 
 __author__ = "Yu-Hsiang Huang"
 
+start = time.time()
+
 def cal_performance(pred, gold, smoothing=False):
     ''' Apply label smoothing if needed '''
 
     pred = pred.contiguous().view(-1, 16)
     loss = cal_loss(pred, gold, smoothing=smoothing)
     pred = pred.max(1)[1]
-    # gold = gold.max(1)[1]
 
     n_char = pred.shape[0]
-    n_word = n_char / 7
     n_char_correct = pred.eq(gold).sum().item()
-    n_word_correct = torch.all(torch.eq(pred.view(-1, 7), gold.view(-1, 7))).sum().item()
+    
+    pred = pred.view(-1, 7)
+    gold = gold.view(-1, 7)
+    n_word = pred.shape[0]
+
+    n_word_correct = 0
+    for i in range(n_word):
+        n_word_correct += torch.equal(pred[i], gold[i])
+    
     return loss, n_char_correct, n_word_correct, n_char, n_word
 
 def cal_loss(pred, gold, smoothing=False):
     ''' Calculate cross entropy loss, apply label smoothing if needed. '''
-
+    
     loss = F.cross_entropy(pred, gold, reduction='sum')
 
-    # pred = pred.contiguous().view(-1, 112)
-    # gold = gold.contiguous().view(-1, 112)
-    # loss = F.binary_cross_entropy_with_logits(pred, gold, reduction='mean')
-    # print(loss)
     return loss
 
 def patch_trg(trg):
-    # trg, gold = trg[:, :-1], trg[:, 1:].contiguous().view(-1)
     trg, gold = trg[:, :-1], trg[:, 1:].contiguous().view(-1, 16)
     gold = gold.max(1)[1]
 
-    # gold = torch.mm(gold, normalize).view(-1).long()
     return trg, gold
 
 def train_epoch(epoch, model, training_data, optimizer, opt, device, smoothing):
     ''' Epoch operation in training phase'''
-
+    global start
     model.train()
     total_loss, global_word_total, global_word_correct = 0, 0, 0 
     temp_total_loss, temp_word_total, temp_word_correct = 0, 0, 0
@@ -69,7 +71,7 @@ def train_epoch(epoch, model, training_data, optimizer, opt, device, smoothing):
         # prepare data
         src_seq = batch['src'].to(device)
         trg_seq, gold = map(lambda x: x.to(device), patch_trg(batch['trg']))
-
+ 
         # forward
         optimizer.zero_grad()
         pred = model(src_seq, trg_seq)
@@ -93,16 +95,20 @@ def train_epoch(epoch, model, training_data, optimizer, opt, device, smoothing):
         total_loss += loss.item()
         temp_total_loss += loss.item()
 
-        log_interval = 5
+        log_interval = 100
         if i % log_interval == 0 and i > 0:
+            end = time.time()
+            hours, rem = divmod(end-start, 3600)
+            minutes, seconds = divmod(rem, 60)
             cur_loss = temp_total_loss / log_interval
             print('| epoch {:3d} | {:5d}/{:5d} batches | '
                 'final acc {:5.2f} | char acc {:5.2f} | loss {:5.2f} | '
-                'lr {:8.5f} |'.format(
+                'lr {:8.5f} | {:0>2}:{:0>2}:{:0>2} |'.format(
                     epoch, i, len(training_data), 
-                    temp_word_correct / temp_word_total, 
-                    temp_char_correct / temp_char_total, 
-                    cur_loss, optimizer._optimizer.param_groups[0]['lr']))
+                    (temp_word_correct / temp_word_total) * 100, 
+                    (temp_char_correct / temp_char_total) * 100, 
+                    cur_loss, optimizer._optimizer.param_groups[0]['lr'],
+                    int(hours),int(minutes), int(seconds)))
             temp_total_loss = 0
             temp_word_total = 0
             temp_char_total = 0
@@ -113,9 +119,9 @@ def train_epoch(epoch, model, training_data, optimizer, opt, device, smoothing):
     accuracy = global_word_correct/global_word_total
     return loss_per_word, accuracy
 
-def eval_epoch(epoch, model, validation_data, device, opt):
+def eval_epoch(epoch, model, validation_data, optimizer, device, opt):
     ''' Epoch operation in evaluation phase '''
-
+    global start
     model.eval()
     total_loss, global_word_total, global_word_correct = 0, 0, 0 
     temp_total_loss, temp_word_total, temp_word_correct = 0, 0, 0
@@ -149,14 +155,18 @@ def eval_epoch(epoch, model, validation_data, device, opt):
 
             log_interval = 100
             if i % log_interval == 0 and i > 0:
+                end = time.time()
+                hours, rem = divmod(end-start, 3600)
+                minutes, seconds = divmod(rem, 60)
                 cur_loss = temp_total_loss / log_interval
                 print('| epoch {:3d} | {:5d}/{:5d} batches | '
                     'final acc {:5.2f} | char acc {:5.2f} | loss {:5.2f} | '
-                    'lr {:8.5f} |'.format(
+                    'lr {:8.5f} | {:0>2}:{:0>2}:{:0>2} |'.format(
                         epoch, i, len(validation_data), 
-                        temp_word_correct / temp_word_total, 
-                        temp_char_correct / temp_char_total, 
-                        cur_loss, optimizer._optimizer.param_groups[0]['lr']))
+                        (temp_word_correct / temp_word_total) * 100, 
+                        (temp_char_correct / temp_char_total) * 100, 
+                        cur_loss, optimizer._optimizer.param_groups[0]['lr'],
+                        int(hours),int(minutes),int(seconds)))
                 temp_total_loss = 0
                 temp_word_total = 0
                 temp_char_total = 0
@@ -170,7 +180,7 @@ def eval_epoch(epoch, model, validation_data, device, opt):
 
 def train(model, training_data, validation_data, optimizer, device, opt):
     ''' Start training '''
-
+    global start
     # Use tensorboard to plot curves, e.g. perplexity, accuracy, learning rate
     if opt.use_tb:
         from torch.utils.tensorboard import SummaryWriter
@@ -191,13 +201,12 @@ def train(model, training_data, validation_data, optimizer, device, opt):
               'elapse: {elapse:3.3f} min'.format(
                   header=f"({header})", ppl=ppl,
                   accu=100*accu, elapse=(time.time()-start_time)/60, lr=lr))
-
+    start = time.time()
     #valid_accus = []
     valid_losses = []
     for epoch_i in range(opt.epoch):
         # print('[ Epoch', epoch_i, ']')
 
-        start = time.time()
         train_loss, train_accu = train_epoch(
             epoch_i, model, training_data, optimizer, opt, device, smoothing=False)
         train_ppl = math.exp(min(train_loss, 100))
@@ -206,7 +215,7 @@ def train(model, training_data, validation_data, optimizer, device, opt):
         print_performances('Training', train_ppl, train_accu, start, lr)
 
         start = time.time()
-        valid_loss, valid_accu = eval_epoch(epoch_i, model, validation_data, device, opt)
+        valid_loss, valid_accu = eval_epoch(epoch_i, model, validation_data, optimizer, device, opt)
         valid_ppl = math.exp(min(valid_loss, 100))
         print_performances('Validation', valid_ppl, valid_accu, start, lr)
 
@@ -245,11 +254,11 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-workload', type= str, default='bc')
     parser.add_argument('-thread_cnt', type=str, default='4')
-    parser.add_argument('-look_back', type=int, default=8)
-    parser.add_argument('-look_front', type=int, default=8)
+    parser.add_argument('-look_back', type=int, default=16)
+    parser.add_argument('-look_front', type=int, default=16)
 
     parser.add_argument('-epoch', type=int, default=1000)
-    parser.add_argument('-b', '--batch_size', type=int, default=2048)
+    parser.add_argument('-b', '--batch_size', type=int, default=512)
 
     parser.add_argument('-d_model', type=int, default=112)
     parser.add_argument('-d_inner_hid', type=int, default=2048)
@@ -304,8 +313,8 @@ def main():
     print(opt)
 
     transformer = Transformer(
-        n_src_vocab=48,
-        n_trg_vocab=48,
+        n_src_vocab=112,
+        n_trg_vocab=112,
         # d_model=opt.d_model,
         d_inner=opt.d_inner_hid,
         n_layers=opt.n_layers,

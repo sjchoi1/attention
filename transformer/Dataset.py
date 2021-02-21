@@ -47,13 +47,13 @@ class CustomDataset(Dataset):
             return hex2vec(pc[-3:])
 
         def preprocess_addr(addr):
-            return hex2vec(addr[-6:-3])
+            return hex2vec(addr[2:-3])
 
         def preprocess_csv_file(f):
             global tid_to_idx
             global pc_to_idx
-            # raw = pd.read_csv(f, header=None)
-            raw = pd.read_csv(f, header=None, nrows=100000)
+            raw = pd.read_csv(f, header=None)
+            # raw = pd.read_csv(f, header=None, nrows=10000)
             # unique_pc = []
             # for index, row in raw.iterrows():
             #     if row[1] not in unique_pc:
@@ -84,9 +84,9 @@ class CustomDataset(Dataset):
     def __getitem__(self, idx):
         # src_tid = np.concatenate(list(self.data.iloc[idx : idx + self.look_back][0]))        
         # src_pc = np.concatenate(list(self.data.iloc[idx : idx + self.look_back][1]))
-        src = torch.tensor(np.concatenate(list(self.data.iloc[idx : idx + self.look_back][2])))
+        src_addr = np.concatenate(list(self.data.iloc[idx : idx + self.look_back][2]))
         # src = torch.tensor(np.concatenate([src_tid, src_pc, src_addr], axis=1))
-        # src = torch.tensor(np.concatenate([src_pc, src_addr], axis=1))
+        src = torch.tensor(np.concatenate([src_pc, src_addr], axis=1))
         trg = torch.tensor(np.concatenate(list(self.data.iloc[idx + self.look_back : 
                             idx + self.look_back + self.look_front][2])))
 
