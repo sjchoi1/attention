@@ -55,7 +55,7 @@ class Encoder(nn.Module):
         super().__init__()
 
         # self.src_word_emb = nn.Embedding(n_src_vocab, d_word_vec, padding_idx=pad_idx)
-        self.src_word_emb = nn.Linear(n_src_vocab, d_word_vec, bias=True)
+        self.src_word_emb = nn.Linear(n_src_vocab, d_word_vec, bias=False)
 
         self.position_enc = PositionalEncoding(d_word_vec, n_position=n_position)
         self.dropout = nn.Dropout(p=dropout)
@@ -96,7 +96,7 @@ class Decoder(nn.Module):
         super().__init__()
 
         # self.trg_word_emb = nn.Embedding(n_trg_vocab, d_word_vec, padding_idx=pad_idx)
-        self.trg_word_emb = nn.Linear(n_trg_vocab, d_word_vec, bias=True)
+        self.trg_word_emb = nn.Linear(n_trg_vocab, d_word_vec, bias=False)
         self.position_enc = PositionalEncoding(d_word_vec, n_position=n_position)
         self.dropout = nn.Dropout(p=dropout)
         self.layer_stack = nn.ModuleList([
@@ -169,7 +169,7 @@ class Transformer(nn.Module):
             n_layers=n_layers, n_head=n_head, d_k=d_k, d_v=d_v,
             pad_idx=trg_pad_idx, dropout=dropout, scale_emb=scale_emb)
 
-        self.trg_word_prj = nn.Linear(d_model, n_trg_vocab, bias=True)
+        self.trg_word_prj = nn.Linear(d_model, n_trg_vocab, bias=False)
 
         for p in self.parameters():
             if p.dim() > 1:
@@ -186,18 +186,21 @@ class Transformer(nn.Module):
         # if emb_src_trg_weight_sharing:
         #     self.encoder.src_word_emb.weight = self.decoder.trg_word_emb.weight
 
+        self.src_mask = None
+        self.trg_mask = None
 
     def forward(self, src_seq, trg_seq):
         # src_mask = get_pad_mask(src_seq, self.src_pad_idx)
         # trg_mask = get_pad_mask(trg_seq, self.trg_pad_idx) & get_subsequent_mask(trg_seq)
 
-        src_dummy_seq = torch.zeros(src_seq.shape[:2]).to(src_seq.device)
-        trg_dummy_seq = torch.zeros(trg_seq.shape[:2]).to(trg_seq.device)
-        src_mask = get_pad_mask(src_dummy_seq, -1)
-        trg_mask = get_pad_mask(trg_dummy_seq, -1) & get_subsequent_mask(trg_dummy_seq)
+        if self.src_mask == None or self.src_mask.shape[0] != src_seq.shape[0]:
+            src_dummy_seq = torch.zeros(src_seq.shape[:2]).to(src_seq.device)
+            trg_dummy_seq = torch.zeros(trg_seq.shape[:2]).to(trg_seq.device)
+            self.src_mask = get_pad_mask(src_dummy_seq, -1)
+            self.trg_mask = get_pad_mask(trg_dummy_seq, -1) & get_subsequent_mask(trg_dummy_seq)
 
-        enc_output, *_ = self.encoder(src_seq, src_mask)
-        dec_output, *_ = self.decoder(trg_seq, trg_mask, enc_output, src_mask)
+        enc_output, *_ = self.encoder(src_seq, self.src_mask)
+        dec_output, *_ = self.decoder(trg_seq, self.trg_mask, enc_output, self.src_mask)
         seq_logit = self.trg_word_prj(dec_output)
         if self.scale_prj:
             seq_logit *= self.d_model ** -0.5

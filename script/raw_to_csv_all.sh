@@ -1,6 +1,6 @@
 #!/bin/bash
-WORKLOAD=(svm)
-THREAD=(1)
+WORKLOAD=(bc)
+THREAD=(4)
 DATA_DIR=/home/sjchoi/attention/data
 CUR_DIR=/home/sjchoi/attention/script
 

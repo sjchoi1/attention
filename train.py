@@ -35,14 +35,20 @@ def cal_performance(pred, gold, smoothing=False):
     n_char = pred.shape[0]
     n_char_correct = pred.eq(gold).sum().item()
     
-    pred = pred.view(-1, 7)
-    gold = gold.view(-1, 7)
-    n_word = pred.shape[0]
+    # pred = pred.view(-1, 126)
+    # gold = gold.view(-1, 126)
 
+    # pred = torch.cat((torch.zeros(pred.shape[0], 2).to(pred.device), pred), 1).contiguous()
+    # gold = torch.cat((torch.zeros(gold.shape[0], 2).to(gold.device), gold), 1).contiguous()
+
+    pred = pred.view(-1, 8)
+    gold = gold.view(-1, 8)
+
+    n_word = pred.shape[0]
     n_word_correct = 0
     for i in range(n_word):
         n_word_correct += torch.equal(pred[i], gold[i])
-    
+
     return loss, n_char_correct, n_word_correct, n_char, n_word
 
 def cal_loss(pred, gold, smoothing=False):
@@ -153,7 +159,7 @@ def eval_epoch(epoch, model, validation_data, optimizer, device, opt):
             total_loss += loss.item()
             temp_total_loss += loss.item()
 
-            log_interval = 100
+            log_interval = 10
             if i % log_interval == 0 and i > 0:
                 end = time.time()
                 hours, rem = divmod(end-start, 3600)
@@ -167,6 +173,14 @@ def eval_epoch(epoch, model, validation_data, optimizer, device, opt):
                         (temp_char_correct / temp_char_total) * 100, 
                         cur_loss, optimizer._optimizer.param_groups[0]['lr'],
                         int(hours),int(minutes),int(seconds)))
+
+                if i == log_interval:
+                    message = ("epoch " + str(epoch) + " " + 
+                                str(int((temp_word_correct / temp_word_total) * 100)) + 
+                                " " + str(int((temp_char_correct / temp_char_total) * 100)))
+                    message = 'slack ' + message
+                    os.system(message)
+                
                 temp_total_loss = 0
                 temp_word_total = 0
                 temp_char_total = 0
@@ -201,7 +215,7 @@ def train(model, training_data, validation_data, optimizer, device, opt):
               'elapse: {elapse:3.3f} min'.format(
                   header=f"({header})", ppl=ppl,
                   accu=100*accu, elapse=(time.time()-start_time)/60, lr=lr))
-    start = time.time()
+    # start = time.time()
     #valid_accus = []
     valid_losses = []
     for epoch_i in range(opt.epoch):
@@ -214,7 +228,7 @@ def train(model, training_data, validation_data, optimizer, device, opt):
         lr = optimizer._optimizer.param_groups[0]['lr']
         print_performances('Training', train_ppl, train_accu, start, lr)
 
-        start = time.time()
+        # start = time.time()
         valid_loss, valid_accu = eval_epoch(epoch_i, model, validation_data, optimizer, device, opt)
         valid_ppl = math.exp(min(valid_loss, 100))
         print_performances('Validation', valid_ppl, valid_accu, start, lr)
@@ -245,6 +259,55 @@ def train(model, training_data, validation_data, optimizer, device, opt):
             tb_writer.add_scalars('accuracy', {'train': train_accu*100, 'val': valid_accu*100}, epoch_i)
             tb_writer.add_scalar('learning_rate', lr, epoch_i)
 
+
+def translate(model, training_data, validation_data, device, opt):
+    ''' Start training '''
+    global start
+
+    start = time.time()
+    #valid_accus = []
+    valid_losses = []
+    for epoch_i in range(opt.epoch):
+        # print('[ Epoch', epoch_i, ']')
+
+        # train_loss, train_accu = train_epoch(
+        #     epoch_i, model, training_data, optimizer, opt, device, smoothing=False)
+        # train_ppl = math.exp(min(train_loss, 100))
+        # # Current learning rate
+        # lr = optimizer._optimizer.param_groups[0]['lr']
+        # print_performances('Training', train_ppl, train_accu, start, lr)
+
+        start = time.time()
+        valid_loss, valid_accu = eval_epoch(epoch_i, model, validation_data, optimizer, device, opt)
+        valid_ppl = math.exp(min(valid_loss, 100))
+        print_performances('Validation', valid_ppl, valid_accu, start, lr)
+
+        # valid_losses += [valid_loss]
+
+        # checkpoint = {'epoch': epoch_i, 'settings': opt, 'model': model.state_dict()}
+
+        # if opt.save_mode == 'all':
+        #     model_name = 'model_accu_{accu:3.3f}.chkpt'.format(accu=100*valid_accu)
+        #     torch.save(checkpoint, model_name)
+        # elif opt.save_mode == 'best':
+        #     model_name = 'model.chkpt'
+        #     if valid_loss <= min(valid_losses):
+        #         torch.save(checkpoint, os.path.join(opt.output_dir, model_name))
+        #         print('    - [Info] The checkpoint file has been updated.')
+
+        # with open(log_train_file, 'a') as log_tf, open(log_valid_file, 'a') as log_vf:
+        #     log_tf.write('{epoch},{loss: 8.5f},{ppl: 8.5f},{accu:3.3f}\n'.format(
+        #         epoch=epoch_i, loss=train_loss,
+        #         ppl=train_ppl, accu=100*train_accu))
+        #     log_vf.write('{epoch},{loss: 8.5f},{ppl: 8.5f},{accu:3.3f}\n'.format(
+        #         epoch=epoch_i, loss=valid_loss,
+        #         ppl=valid_ppl, accu=100*valid_accu))
+
+        # if opt.use_tb:
+        #     tb_writer.add_scalars('ppl', {'train': train_ppl, 'val': valid_ppl}, epoch_i)
+        #     tb_writer.add_scalars('accuracy', {'train': train_accu*100, 'val': valid_accu*100}, epoch_i)
+        #     tb_writer.add_scalar('learning_rate', lr, epoch_i)
+
 def main():
     ''' 
     Usage:
@@ -253,21 +316,22 @@ def main():
 
     parser = argparse.ArgumentParser()
     parser.add_argument('-workload', type= str, default='bc')
-    parser.add_argument('-thread_cnt', type=str, default='4')
+    parser.add_argument('-thread_cnt', type=str, default='16')
     parser.add_argument('-look_back', type=int, default=16)
     parser.add_argument('-look_front', type=int, default=16)
+    parser.add_argument('-wrap', type=int, default=2)
 
-    parser.add_argument('-epoch', type=int, default=1000)
-    parser.add_argument('-b', '--batch_size', type=int, default=512)
+    parser.add_argument('-epoch', type=int, default=100)
+    parser.add_argument('-b', '--batch_size', type=int, default=256)
 
-    parser.add_argument('-d_model', type=int, default=112)
+    parser.add_argument('-d_model', type=int, default=512)
     parser.add_argument('-d_inner_hid', type=int, default=2048)
-    # parser.add_argument('-d_k', type=int, default=22)
-    # parser.add_argument('-d_v', type=int, default=22)
+    parser.add_argument('-d_k', type=int, default=64)
+    parser.add_argument('-d_v', type=int, default=64)
 
     parser.add_argument('-n_head', type=int, default=8)
-    parser.add_argument('-n_layers', type=int, default=6)
-    parser.add_argument('-warmup','--n_warmup_steps', type=int, default=8000)
+    parser.add_argument('-n_layers', type=int, default=2)
+    parser.add_argument('-warmup','--n_warmup_steps', type=int, default=4000)
     parser.add_argument('-lr_mul', type=float, default=2.0)
     parser.add_argument('-seed', type=int, default=None)
 
@@ -293,7 +357,7 @@ def main():
         random.seed(opt.seed)
 
     if not opt.output_dir:
-        opt.output_dir = ('output/' + opt.workload + '_t' + opt.thread_cnt + 
+        opt.output_dir = ('output/' + opt.workload + '_t' + opt.thread_cnt + '_w' + str(opt.wrap) +
                             '_lb' + str(opt.look_back) + '_lf' + str(opt.look_front))
 
     if not os.path.exists(opt.output_dir):
@@ -313,9 +377,12 @@ def main():
     print(opt)
 
     transformer = Transformer(
-        n_src_vocab=112,
-        n_trg_vocab=112,
-        # d_model=opt.d_model,
+        n_src_vocab=opt.wrap * 16,
+        n_trg_vocab=opt.wrap * 16,
+        d_k=opt.d_k,
+        d_v=opt.d_v,
+        d_model=opt.d_model,
+        d_word_vec=opt.d_model,
         d_inner=opt.d_inner_hid,
         n_layers=opt.n_layers,
         n_head=opt.n_head,
@@ -332,17 +399,20 @@ def main():
         opt.lr_mul, opt.d_model, opt.n_warmup_steps)
 
     train(transformer, training_data, validation_data, optimizer, device, opt)
+    # translate(transformer, training_data, validation_data, device, opt)
 
 def prepare_dataloaders(opt):
     train_csv = 'data/' + opt.workload + '/csv/t' + opt.thread_cnt + '/train.csv'
     val_csv = 'data/' + opt.workload + '/csv/t' + opt.thread_cnt + '/val.csv'
 
     print('[Info] Preparing custom dataset')
-    train_dataset = CustomDataset(train_csv, opt.look_back, opt.look_front, opt.thread_cnt)
-    val_dataset = CustomDataset(val_csv, opt.look_back, opt.look_front, opt.thread_cnt)
+    print('[Info] Training dataset')
+    train_dataset = CustomDataset(train_csv, opt.look_back, opt.look_front, opt.wrap, opt.batch_size * 1000)
+    print('[Info] Validation dataset')
+    val_dataset = CustomDataset(val_csv, opt.look_back, opt.look_front, opt.wrap, opt.batch_size * 100)
 
     print('[Info] Preparing dataloader')
-    train_iterator = DataLoader(train_dataset, batch_size=opt.batch_size, pin_memory=True, shuffle=True)
+    train_iterator = DataLoader(train_dataset, batch_size=opt.batch_size, pin_memory=True)
     val_iterator = DataLoader(val_dataset, batch_size=opt.batch_size, pin_memory=True)
 
     return train_iterator, val_iterator
