@@ -377,7 +377,7 @@ def main():
     print(opt)
 
     transformer = Transformer(
-        n_src_vocab=opt.wrap * 16,
+        n_src_vocab=opt.wrap * 16 + 48,
         n_trg_vocab=opt.wrap * 16,
         d_k=opt.d_k,
         d_v=opt.d_v,
